@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Learning to 'try!' things in Rust</title>
+  <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="alternate" type="application/rss+xml" href="http://www.jonathanturner.org/feed.xml" />
+  </head>
+<body>
+  <div class="container">
+    <header class="masthead">
+  <h1 class="masthead-title--small">
+    <a href="/">Jonathan Turner</a>
+  </h1>
+</header>      
+<div class="content post">
+  <h1 class="post-title">Learning to 'try!' things in Rust</h1>
+  <div class="post-date">
+    <time>04 Nov 2015</time>
+  </div>
+  <p>I started learning Rust in earnest a few weeks ago.  Coming from C++, a fair share of the idioms felt right at home.  There was clear memory management and an eye towards lightweight abstractions.</p>
+
+<p>But when I started looking around for how to do exceptions, I was surprised to find that Rust had none.  In its place were types like this:</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">fn</span> <span class="nf">foo_maker</span><span class="p">()</span> <span class="k">-&gt;</span> <span class="n">Result</span><span class="o">&lt;</span><span class="n">Foo</span><span class="p">,</span> <span class="nn">io</span><span class="p">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span> <span class="o">...</span><span class="p">}</span>
+</code></pre></div></div>
+
+<p>I recognized this style, having come from playing with languages like Haskell, but despite doing some functional programming before I wasn’t entirely sure how to approach it.  At first blush, the Result value seems pretty straightforward, it either returns something of Foo or an io::Error.  We know which one it returns by pattern matching out the value:</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">result</span> <span class="o">=</span> <span class="nf">foo_maker</span><span class="p">();</span>
+<span class="k">match</span> <span class="n">result</span> <span class="p">{</span>
+  <span class="nf">Ok</span><span class="p">(</span><span class="n">foo</span><span class="p">)</span> <span class="k">-&gt;</span> <span class="n">foo</span><span class="p">,</span>
+  <span class="nf">Err</span><span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="k">-&gt;</span> <span class="nd">println!</span><span class="p">(</span><span class="s">"Error: {:?}"</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span> <span class="c">// Ooops, we hit an error, tell the user</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Great, you might think, that’s cute.  Well, at least at first.  Real code tends to have a few reads in a row:</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">num_chans</span> <span class="o">=</span> <span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">);</span>
+<span class="k">let</span> <span class="n">samples_per_sec</span> <span class="o">=</span> <span class="nf">read_u32_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">);</span>
+<span class="k">let</span> <span class="n">avg_bytes_per_sec</span> <span class="o">=</span> <span class="nf">read_u32_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">);</span>
+<span class="k">let</span> <span class="n">block_align</span> <span class="o">=</span> <span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">);</span>
+<span class="k">let</span> <span class="n">bits_per_sample</span> <span class="o">=</span> <span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">);</span>
+</code></pre></div></div>
+
+<p>Since we’re reading from a file, any of these reads could hit an error.  Perhaps the hard drive dies, or we prematurely hit the end of the file.  Because of that, each function returns a Result that we later have to pattern match to get the value out.  This means we have to pattern match every result.  Yuck.</p>
+
+<p>If you poke around on the internets, you’ll find a sneaky way around this using <code class="language-plaintext highlighter-rouge">.unwrap()</code>.  The <code class="language-plaintext highlighter-rouge">.unwrap()</code> call does just what it name implies: it unwraps the Result and gives us the value, assuming the result is Ok.  What if it errored with an Err? Well, then the application panics.</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">num_chans</span> <span class="o">=</span> <span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">)</span><span class="nf">.unwrap</span><span class="p">();</span>
+<span class="k">let</span> <span class="n">samples_per_sec</span> <span class="o">=</span> <span class="nf">read_u32_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">)</span><span class="nf">.unwrap</span><span class="p">();</span>
+<span class="k">let</span> <span class="n">avg_bytes_per_sec</span> <span class="o">=</span> <span class="nf">read_u32_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">)</span><span class="nf">.unwrap</span><span class="p">();</span>
+<span class="k">let</span> <span class="n">block_align</span> <span class="o">=</span> <span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">)</span><span class="nf">.unwrap</span><span class="p">();</span>
+<span class="k">let</span> <span class="n">bits_per_sample</span> <span class="o">=</span> <span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">)</span><span class="nf">.unwrap</span><span class="p">();</span>
+</code></pre></div></div>
+
+<p>If you felt a cold shiver run down your spine looking at that, good on you :).  Now, let’s talk about how we actually fix this code.</p>
+
+<h1 id="do-or-do-not-there-is-a-try">Do or do not. There is a try!</h1>
+
+<p>Looking a bit further in Rust examples, I learned about another way to call functions using the <code class="language-plaintext highlighter-rouge">try!</code> macro.  Maybe, I thought, <code class="language-plaintext highlighter-rouge">try!</code> would save us.  So I tried it out:</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">use</span> <span class="nn">std</span><span class="p">::</span><span class="n">io</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">std</span><span class="p">::</span><span class="nn">fs</span><span class="p">::</span><span class="n">File</span><span class="p">;</span>
+
+<span class="k">fn</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">let</span> <span class="k">mut</span> <span class="n">f</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nn">File</span><span class="p">::</span><span class="nf">open</span><span class="p">(</span><span class="s">"foo.txt"</span><span class="p">));</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>…and <strong>BOOM</strong></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&lt;std macros&gt;:5:8: 6:42 error: mismatched types:
+ expected `()`,
+    found `core::result::Result&lt;_, _&gt;`
+(expected (),
+    found enum `core::result::Result`) [E0308]
+&lt;std macros&gt;:5 return $ crate:: result:: Result:: Err (
+&lt;std macros&gt;:6 $ crate:: convert:: From:: from ( err ) ) } } )
+read_a_file.rs:5:17: 5:44 note: in this expansion of try! (defined in &lt;std macros&gt;)
+&lt;std macros&gt;:5:8: 6:42 help: run `rustc --explain E0308` to see a detailed explanation
+error: aborting due to previous error
+</code></pre></div></div>
+
+<p>Okay, seriously?  I feel like I jumped in the Haskell pool after drinking a C++ template error cocktail.  What <em>is</em> that?</p>
+
+<p>Luckily after asking around, I was finally able to piece together what was going wrong.  The hint lies in these lines:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> expected `()`,
+    found `core::result::Result&lt;_, _&gt;`
+</code></pre></div></div>
+
+<p>Ah, some type mismatch is happening.  Our main function doesn’t return anything, which is the <code class="language-plaintext highlighter-rouge">()</code> in the ‘expected’ above, but <code class="language-plaintext highlighter-rouge">try!</code> only works inside functions that return a <code class="language-plaintext highlighter-rouge">Result</code>.  This might be the first time in my life I’ve ever seen a function in a C-style language that was callable only inside functions of a particular type.</p>
+
+<p>Shouldn’t be too hard to fix, just put it in a function that returns Result, right?</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">use</span> <span class="nn">std</span><span class="p">::</span><span class="n">io</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">std</span><span class="p">::</span><span class="nn">fs</span><span class="p">::</span><span class="n">File</span><span class="p">;</span>
+
+<span class="k">fn</span> <span class="nf">read_file</span><span class="p">()</span> <span class="k">-&gt;</span> <span class="n">Result</span><span class="o">&lt;</span><span class="p">(),</span> <span class="nn">io</span><span class="p">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+    <span class="k">let</span> <span class="k">mut</span> <span class="n">f</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nn">File</span><span class="p">::</span><span class="nf">open</span><span class="p">(</span><span class="s">"foo.txt"</span><span class="p">));</span>
+    <span class="nf">Ok</span><span class="p">(())</span>
+<span class="p">}</span>
+<span class="k">fn</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nf">read_file</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Yup, that did it.  Then I promptly closed my editor and walked away.  I mean, this thing just felt <em>alien</em>.  Unnatural.  Gross.</p>
+
+<p>What I didn’t realize was that a few weeks later I’d grok the genius in this approach.</p>
+
+<h2 id="genius-1---unlike-trycatch-try-is-precise">Genius #1 - Unlike try/catch, try! is precise</h2>
+
+<p>Let’s look at a real-life example from a project I’m working on:</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">fn</span> <span class="nf">load_data</span><span class="p">(</span><span class="n">fname</span><span class="p">:</span> <span class="o">&amp;</span><span class="nb">String</span><span class="p">)</span> <span class="k">-&gt;</span> <span class="n">Result</span><span class="o">&lt;</span><span class="n">Data</span><span class="p">,</span> <span class="nn">io</span><span class="p">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+  <span class="k">let</span> <span class="k">mut</span> <span class="n">f</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nn">File</span><span class="p">::</span><span class="nf">open</span><span class="p">(</span><span class="n">fname</span><span class="p">));</span>
+  <span class="k">let</span> <span class="n">num_pages</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="n">f</span><span class="nf">.read_u8</span><span class="p">())</span> <span class="o">*</span> <span class="mi">4</span><span class="p">;</span>
+ 
+  <span class="k">let</span> <span class="k">mut</span> <span class="n">pages</span> <span class="p">:</span> <span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">u8</span><span class="o">&gt;&gt;</span> <span class="o">=</span> <span class="nn">Vec</span><span class="p">::</span><span class="nf">new</span><span class="p">();</span>
+  <span class="k">for</span> <span class="mi">_</span> <span class="n">in</span> <span class="mi">0</span><span class="o">..</span><span class="n">num_pages</span> <span class="p">{</span>
+      <span class="k">let</span> <span class="k">mut</span> <span class="n">buffer</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">;</span> <span class="mi">4096</span><span class="p">];</span>
+      <span class="nd">try!</span><span class="p">(</span><span class="n">f</span><span class="nf">.read</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">buffer</span><span class="p">));</span>
+      
+      <span class="n">pages</span><span class="nf">.push</span><span class="p">(</span><span class="n">buffer</span><span class="nf">.iter</span><span class="p">()</span><span class="nf">.cloned</span><span class="p">()</span><span class="nf">.collect</span><span class="p">());</span>
+  <span class="p">}</span>
+  <span class="c">// ...</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>It may take your eyes a minute to adjust to the new syntax, but knowing what we know, we can look at the code above and know exactly which functions might give us errors.  The <code class="language-plaintext highlighter-rouge">try!()</code> call even works on calls that are part of an expression, like <code class="language-plaintext highlighter-rouge">try!(f.read_u8()) * 4</code>.</p>
+
+<p>Compare this to traditional try/catch blocks and how they tend to get put around whole sections of code when in reality only parts of the code blocks may throw exceptions.  The end result is code that’s very clear and doesn’t muddy exceptional code and value-based code together.</p>
+
+<h2 id="genius-2---feels-like-exceptions">Genius #2 - Feels like exceptions</h2>
+
+<p>With this little bit of syntax, we get something that is value-based, but still feels like exceptions.</p>
+
+<p>Let’s say your task is to write code that will load a variety of audio file formats.  In each audio format loader, you have various subsections that get loaded (eg, a header, a metadata chunk, a chunk of audio data, etc).  It’d be great if you could create specialized functions for each.  If there are any errors, you just want to bubble that back out to the original caller loading the file.  The resulting code may look something like:</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">fn</span> <span class="nf">load_header</span><span class="p">(</span><span class="n">file</span><span class="p">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">File</span><span class="p">)</span> <span class="k">-&gt;</span> <span class="n">Result</span><span class="o">&lt;</span><span class="n">Header</span><span class="p">,</span> <span class="nn">io</span><span class="p">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+  <span class="nf">Ok</span><span class="p">(</span><span class="n">Header</span> <span class="p">{</span> <span class="n">header_block</span><span class="p">:</span> <span class="nd">try!</span><span class="p">(</span><span class="n">file</span><span class="nf">.read_u32</span><span class="p">())</span> <span class="p">})</span>
+<span class="p">}</span>
+
+<span class="k">fn</span> <span class="nf">load_metadata</span><span class="p">(</span><span class="n">file</span><span class="p">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">File</span><span class="p">)</span> <span class="k">-&gt;</span> <span class="n">Result</span><span class="o">&lt;</span><span class="n">Metadata</span><span class="p">,</span> <span class="nn">io</span><span class="p">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+  <span class="nf">Ok</span><span class="p">(</span><span class="n">Metadata</span> <span class="p">{</span> <span class="n">metadata_block</span><span class="p">:</span> <span class="nd">try!</span><span class="p">(</span><span class="n">file</span><span class="nf">.read_u32</span><span class="p">())</span> <span class="p">})</span>
+<span class="p">}</span>
+
+<span class="k">fn</span> <span class="nf">load_audio</span><span class="p">(</span><span class="n">file</span><span class="p">:</span> <span class="o">&amp;</span><span class="k">mut</span> <span class="n">File</span><span class="p">)</span> <span class="k">-&gt;</span> <span class="n">Result</span><span class="o">&lt;</span><span class="n">Audio</span><span class="p">,</span> <span class="nn">io</span><span class="p">::</span><span class="n">Error</span><span class="o">&gt;</span> <span class="p">{</span>
+  <span class="k">let</span> <span class="n">header</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nf">load_header</span><span class="p">(</span><span class="n">file</span><span class="p">));</span>
+  <span class="k">let</span> <span class="n">metadata</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nf">load_metadata</span><span class="p">(</span><span class="n">file</span><span class="p">));</span>
+  <span class="nf">Ok</span><span class="p">(</span><span class="n">Audio</span> <span class="p">{</span> <span class="n">header</span><span class="p">:</span> <span class="n">header</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="n">metadata</span> <span class="p">})</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>We can refactor our file loading into helper functions, and we continue to use the same familiar <code class="language-plaintext highlighter-rouge">try!</code> pattern.  How does this work?  The trick is that all the Results agree that <code class="language-plaintext highlighter-rouge">io::Error</code> is the error case.  If one of my helper functions hits a bad read and has to return an error, that error naturally bubbles all the way out without calling any additional code.</p>
+
+<p>The end result is that we have precise syntax that is transparent about errors at every layer, stays pretty lightweight, and gives us the familiar “bubble out” feel of languages with exceptions.</p>
+
+<h1 id="trade-offs">Trade-offs</h1>
+
+<p>Of course, there are trade-offs.  We end up repeating <code class="language-plaintext highlighter-rouge">try!()</code> in places we might have just wrapped in one big try/catch block.  For example, the fix to our earlier use case might look like this:</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">let</span> <span class="n">num_chans</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">));</span>
+<span class="k">let</span> <span class="n">samples_per_sec</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nf">read_u32_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">));</span>
+<span class="k">let</span> <span class="n">avg_bytes_per_sec</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nf">read_u32_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">));</span>
+<span class="k">let</span> <span class="n">block_align</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">));</span>
+<span class="k">let</span> <span class="n">bits_per_sample</span> <span class="o">=</span> <span class="nd">try!</span><span class="p">(</span><span class="nf">read_u16_le</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span> <span class="n">f</span><span class="p">));</span>
+</code></pre></div></div>
+
+<p>Personally, I’m happy making the trade-off for the added precision.</p>
+
+<p>We also saw another trade-off earlier.  If you use <code class="language-plaintext highlighter-rouge">try!()</code> in a function that doesn’t return a Result, you get an incomprehensible error message.  But once you know what’s going on, you can use it with confidence.</p>
+
+</div>
+ <div class="notepad-author-info">
+  <div class="row">
+      <section class="notepad-post-author small-12 columns">
+              <img src="/images/jonathanturner.png" class="notepad-post-author-avatar" alt="Jonathan Turner's photo">
+              <span class="author-label">Author</span>
+              <h1>Jonathan Turner</h1>
+              <p><a href="https://twitter.com/jntrnr" class="author-website">@jntrnr</a></p>
+      </section>
+  </div>
+ </div>
+   
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-69474134-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+  </div>
+</body>
+</html>
